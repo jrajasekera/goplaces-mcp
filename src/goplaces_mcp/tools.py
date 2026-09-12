@@ -684,13 +684,16 @@ def goplaces_details(args: dict[str, Any], **_: Any) -> str:
     try:
         client = _get_client()
         place_id = _normalize_place_id(_require_text(_as_str(args, "place_id"), "place_id"))
-        extra = list(_DETAILS_EXTRA_FIELDS)
+        level = _detail_level(args)
+        # regularOpeningHours is an Enterprise-tier field, so requesting it at a
+        # cheaper detail_level would quietly bill at the top tier anyway.
+        extra = list(_DETAILS_EXTRA_FIELDS) if level == _TIER_FULL else []
         if _as_bool(args, "include_reviews"):
             extra.append("reviews")
         if _as_bool(args, "include_photos"):
             extra.append("photos")
         field_mask = _place_field_mask(
-            _detail_level(args),
+            level,
             prefix="",
             atmosphere=_as_bool(args, "include_atmosphere"),
             ev=_as_bool(args, "include_ev"),

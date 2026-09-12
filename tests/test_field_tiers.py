@@ -170,3 +170,26 @@ def test_nearby_can_rank_by_distance(google) -> None:
     google.reply("/places:searchNearby", {"places": []})
     call(tools.goplaces_nearby, {"lat": 47.6, "lng": -122.3, "radius_m": 500, "rank_by": "distance"})
     assert google.last_request().body["rankPreference"] == "DISTANCE"
+
+
+def test_details_ids_level_stays_off_the_enterprise_tier(google) -> None:
+    """regularOpeningHours is Enterprise; requesting it would negate a cheap tier."""
+    google.reply("/places/A", {"id": "A"})
+    call(tools.goplaces_details, {"place_id": "A", "detail_level": "ids"})
+    mask = google.last_request().mask_tokens()
+    assert mask == {"id"}
+
+
+def test_details_basic_level_skips_opening_hours(google) -> None:
+    google.reply("/places/A", {"id": "A"})
+    call(tools.goplaces_details, {"place_id": "A", "detail_level": "basic"})
+    mask = google.last_request().mask_tokens()
+    assert "regularOpeningHours" not in mask
+    assert "currentOpeningHours" not in mask
+    assert "displayName" in mask
+
+
+def test_details_opt_ins_still_apply_at_a_cheap_tier(google) -> None:
+    google.reply("/places/A", {"id": "A"})
+    call(tools.goplaces_details, {"place_id": "A", "detail_level": "ids", "include_photos": True})
+    assert google.last_request().mask_tokens() == {"id", "photos"}
