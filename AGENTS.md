@@ -1,6 +1,6 @@
 # goplaces MCP
 
-This repository packages one Google Places and Routes implementation for both Codex and Claude Code through a shared stdio MCP server.
+This repository packages one Google Places and Routes implementation for Codex, Claude Code, and Hermes Agent through a shared stdio MCP server.
 
 `AGENTS.md` is the canonical project guidance; keep `CLAUDE.md` as a relative symlink to it.
 
@@ -15,9 +15,10 @@ This repository packages one Google Places and Routes implementation for both Co
 - `src/goplaces_mcp/tools.py` contains the Google Places and Routes client, validation, response mapping, and tool handlers.
 - `src/goplaces_mcp/schemas.py` is the authoritative definition of the ten public tool names, titles, descriptions, input schemas, output schemas, and the `SERVER_INSTRUCTIONS` string sent at initialize.
 - `src/goplaces_mcp/server.py` is a thin MCP adapter. Keep provider and domain logic out of this file. It sets `isError` on payloads carrying an `error` key, attaches read-only tool annotations, returns `structuredContent`, and lifts photo bytes into an image block.
-- `skills/goplaces/SKILL.md` teaches agents when and how to select the tools. Keep it valid for both Codex and Claude Code.
+- `skills/goplaces/SKILL.md` teaches agents when and how to select the tools. Keep it valid for Codex, Claude Code, and Hermes Agent; Hermes prefixes the tool names, so refer to tools by their bare `goplaces_*` names and do not assume a host-specific spelling.
 - `.mcp.json` is intentionally shared by both hosts. It uses `CLAUDE_PLUGIN_ROOT` when Claude supplies it and the plugin-root working directory otherwise. The `/bin/sh` wrapper is what expands that variable, which is why one manifest can serve both hosts and why the launcher is POSIX-only. `uv run --frozen` keeps startup from resolving or re-locking dependencies.
 - `.codex-plugin/plugin.json` and `.claude-plugin/plugin.json` are host-specific metadata around the same skill and server.
+- Hermes Agent is the third consumer and needs no manifest here: it has its own MCP client and is wired up with an `mcp_servers` entry in `~/.hermes/config.yaml` plus a copy of `skills/goplaces` in `~/.hermes/skills`. README documents the entry. The retired native plugin lives at `github.com/jrajasekera/hermes-goplaces`; do not port fixes there.
 - Release versions are duplicated in both plugin manifests, `pyproject.toml`, and `src/goplaces_mcp/__init__.py`; keep them synchronized when releasing. `tests/test_packaging.py` fails if they drift.
 
 ## Compatibility Invariants

@@ -1,6 +1,6 @@
 # goplaces MCP
 
-Google Places and Routes tools for Codex and Claude Code, exposed through a shared Model Context Protocol server.
+Google Places and Routes tools for Codex, Claude Code, and Hermes Agent, exposed through a shared Model Context Protocol server.
 
 The server provides:
 
@@ -79,6 +79,48 @@ claude --plugin-dir /absolute/path/to/goplaces-mcp
 ```
 
 Start Claude from an environment containing `GOOGLE_PLACES_API_KEY`.
+
+## Hermes Agent
+
+Hermes has its own MCP client, so it consumes this server rather than a native
+Python plugin. Clone the repository on the Hermes host, install the dependencies,
+and add one `mcp_servers` entry to `~/.hermes/config.yaml`:
+
+```yaml
+mcp_servers:
+  goplaces:
+    command: /usr/local/bin/uv
+    args:
+      - run
+      - --frozen
+      - --directory
+      - /absolute/path/to/goplaces-mcp
+      - goplaces-mcp
+    env:
+      GOOGLE_PLACES_API_KEY: ${GOOGLE_PLACES_API_KEY}
+```
+
+Hermes only inherits an environment allowlist (`PATH`, `HOME`, and similar) into
+stdio subprocesses, so the API key has to be named in `env`. The `${VAR}` form
+resolves from `~/.hermes/.env`, which keeps the key out of `config.yaml`. Use an
+absolute path for `uv`, because the config takes no working directory and the
+inherited `PATH` may not be the login shell's.
+
+Install the skill alongside it:
+
+```sh
+cp -R skills/goplaces ~/.hermes/skills/goplaces
+```
+
+Hermes registers the tools into an `mcp-goplaces` toolset and prefixes each
+tool name with `mcp_` and the server name, the way Claude Code prefixes MCP
+tools, so the agent sees a longer name than the bare one this README documents.
+It also decodes the `goplaces_photo` image block into a Hermes `MEDIA:`
+attachment.
+Verify a deployment with `hermes mcp test goplaces`, which connects and lists
+tools without issuing a billable Google request.
+
+This replaces the standalone `hermes-goplaces` plugin, which is retired.
 
 ## Development
 
