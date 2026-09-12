@@ -896,7 +896,12 @@ def goplaces_route_search(args: dict[str, Any], **_: Any) -> str:
         for index, place in enumerate(search_payload.get("places", [])):
             summary = _map_place_summary(place)
             entry = summaries[index] if index < len(summaries) else None
-            _apply_routing_summary(entry, summary)
+            _apply_routing_summary(
+                entry,
+                summary,
+                duration_key="trip_duration_seconds",
+                distance_key="trip_distance_meters",
+            )
             detour = _detour_seconds(entry, direct_seconds)
             if detour is not None:
                 summary["detour_seconds"] = detour
@@ -1232,11 +1237,19 @@ def _routing_summary_legs(summary: Any) -> list[dict[str, Any]]:
     return [leg for leg in legs if isinstance(leg, dict)] if isinstance(legs, list) else []
 
 
-def _apply_routing_summary(summary: Any, target: dict[str, Any]) -> None:
+def _apply_routing_summary(
+    summary: Any,
+    target: dict[str, Any],
+    *,
+    duration_key: str = "duration_seconds",
+    distance_key: str = "distance_meters",
+) -> None:
     """Fold an aligned routingSummaries entry into a mapped place.
 
-    A routing origin yields one leg (origin -> place). Search-along-route yields
-    two (origin -> place, place -> destination), so the totals below cover both.
+    A routing origin yields one leg (origin -> place), so the totals are travel
+    from that origin. Search-along-route yields two (origin -> place, place ->
+    destination), so the totals are the whole trip via that stop — a different
+    quantity, which is why the caller renames the keys.
     """
     legs = _routing_summary_legs(summary)
     if not legs:
@@ -1244,9 +1257,9 @@ def _apply_routing_summary(summary: Any, target: dict[str, Any]) -> None:
     durations = [_parse_duration_seconds(leg.get("duration")) for leg in legs]
     distances = [leg.get("distanceMeters") for leg in legs]
     if any(value is not None for value in durations):
-        target["duration_seconds"] = sum(value for value in durations if value is not None)
+        target[duration_key] = sum(value for value in durations if value is not None)
     if any(value is not None for value in distances):
-        target["distance_meters"] = sum(value for value in distances if value is not None)
+        target[distance_key] = sum(value for value in distances if value is not None)
     directions_uri = summary.get("directionsUri") if isinstance(summary, dict) else None
     if directions_uri:
         target["directions_url"] = directions_uri

@@ -529,6 +529,14 @@ GOPLACES_ROUTE_SEARCH = {
                             "type": "integer",
                             "description": "Extra travel time versus going straight through.",
                         },
+                        "trip_duration_seconds": {
+                            "type": "integer",
+                            "description": "Total travel time for the whole journey via this stop.",
+                        },
+                        "trip_distance_meters": {
+                            "type": "number",
+                            "description": "Total distance for the whole journey via this stop.",
+                        },
                     },
                 },
             },

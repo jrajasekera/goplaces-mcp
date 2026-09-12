@@ -83,8 +83,10 @@ def test_detour_is_measured_against_the_direct_route(google) -> None:
     )
     stop = result["results"][0]
     assert stop["detour_seconds"] == 100
-    assert stop["duration_seconds"] == 10900
-    assert stop["distance_meters"] == 3000
+    # Named for the whole journey via this stop, not travel from an origin.
+    assert stop["trip_duration_seconds"] == 10900
+    assert stop["trip_distance_meters"] == 3000
+    assert "duration_seconds" not in stop
     assert result["route"]["duration_seconds"] == 10800
     assert result["route"]["distance_meters"] == 280_000
 
