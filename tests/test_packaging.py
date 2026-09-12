@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import tomllib
 from pathlib import Path
 
@@ -47,3 +48,33 @@ def test_every_tool_declares_an_output_schema() -> None:
 def test_server_instructions_are_present() -> None:
     assert schemas.SERVER_INSTRUCTIONS.strip()
     assert "goplaces_search" in schemas.SERVER_INSTRUCTIONS
+
+
+def _guidance_documents() -> dict[str, str]:
+    """The three places a tool must be described for an agent to find it."""
+    return {
+        "SERVER_INSTRUCTIONS": schemas.SERVER_INSTRUCTIONS,
+        "skills/goplaces/SKILL.md": (ROOT / "skills/goplaces/SKILL.md").read_text(),
+        "README.md": (ROOT / "README.md").read_text(),
+    }
+
+
+@pytest.mark.parametrize("source", sorted(_guidance_documents()))
+def test_guidance_documents_cover_every_tool(source: str) -> None:
+    """A tool an agent is never told about is a tool it will not use."""
+    text = _guidance_documents()[source]
+    missing = [
+        definition["name"]
+        for definition in server._TOOL_DEFINITIONS
+        if definition["name"] not in text
+    ]
+    assert not missing, f"{source} never mentions {missing}"
+
+
+@pytest.mark.parametrize("source", sorted(_guidance_documents()))
+def test_guidance_documents_invent_no_tools(source: str) -> None:
+    """Guidance naming a tool that does not exist sends agents at nothing."""
+    known = {definition["name"] for definition in server._TOOL_DEFINITIONS}
+    known.add("goplaces_mcp")  # the package itself, not a tool
+    named = set(re.findall(r"goplaces_[a-z_]+", _guidance_documents()[source]))
+    assert not named - known, f"{source} names unknown tools: {sorted(named - known)}"

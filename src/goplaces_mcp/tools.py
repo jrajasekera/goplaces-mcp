@@ -787,7 +787,7 @@ def goplaces_directions(args: dict[str, Any], **_: Any) -> str:
     try:
         client = _get_client()
         include_steps = _as_bool(args, "include_steps")
-        primary_mode = _normalize_direction_mode(_as_str(args, "mode", "walk"))
+        primary_mode = _normalize_direction_mode(_as_str(args, "mode", "drive"))
         compare_raw = _as_str(args, "compare_mode")
         compare_mode = _normalize_direction_mode(compare_raw) if compare_raw else ""
         if compare_mode and compare_mode == primary_mode:
@@ -1569,7 +1569,7 @@ def _autocomplete_text(value: Any) -> str:
 
 def _normalize_direction_mode(mode: str) -> str:
     if not mode:
-        mode = "walk"
+        mode = "drive"
     normalized = _DIRECTION_MODE_TO_API.get(mode.strip().lower())
     if not normalized:
         raise ValidationError("mode", "must be walk, drive, bicycle, or transit")

@@ -53,6 +53,21 @@ def test_directions_maps_a_route(google) -> None:
     assert "steps" not in result
 
 
+def test_directions_defaults_to_driving(google) -> None:
+    google.reply("/directions/v2:computeRoutes", ROUTE)
+    result = call(tools.goplaces_directions, {"from_text": "A", "to_text": "B"})
+    body = google.requests_to("/directions/v2:computeRoutes")[0].body
+    assert body["travelMode"] == "DRIVE"
+    assert result["mode"] == "driving"
+
+
+def test_directions_empty_mode_defaults_to_driving(google) -> None:
+    google.reply("/directions/v2:computeRoutes", ROUTE)
+    call(tools.goplaces_directions, {"from_text": "A", "to_text": "B", "mode": ""})
+    body = google.requests_to("/directions/v2:computeRoutes")[0].body
+    assert body["travelMode"] == "DRIVE"
+
+
 def test_directions_include_steps_is_opt_in(google) -> None:
     google.reply("/directions/v2:computeRoutes", ROUTE)
     result = call(tools.goplaces_directions, {"from_text": "A", "to_text": "B", "include_steps": True})

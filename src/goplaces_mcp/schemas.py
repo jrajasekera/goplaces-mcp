@@ -413,7 +413,12 @@ GOPLACES_DIRECTIONS = {
             "from_lng": {"type": "number", "description": "Origin longitude. Must be paired with from_lat."},
             "to_lat": {"type": "number", "description": "Destination latitude. Must be paired with to_lng."},
             "to_lng": {"type": "number", "description": "Destination longitude. Must be paired with to_lat."},
-            "mode": {"type": "string", "enum": ["walk", "drive", "bicycle", "transit"], "default": "walk", "description": "Primary travel mode."},
+            "mode": {
+                "type": "string",
+                "enum": ["walk", "drive", "bicycle", "transit"],
+                "default": "drive",
+                "description": "Primary travel mode. Defaults to drive; pass walk explicitly for a walking route.",
+            },
             "compare_mode": {"type": "string", "enum": ["walk", "drive", "bicycle", "transit"], "description": "Optional second travel mode to compare with mode."},
             "include_steps": {"type": "boolean", "default": False, "description": "Include turn-by-turn steps in the response."},
             "units": {"type": "string", "enum": ["metric", "imperial"], "default": "metric", "description": "Localized distance units."},
@@ -425,7 +430,10 @@ GOPLACES_DIRECTIONS = {
             "waypoints": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Up to 25 intermediate stops, in order, as addresses or place names.",
+                "description": (
+                    "Up to 25 intermediate stops, in order, as addresses or place "
+                    "names. Text only; place IDs are not accepted here."
+                ),
             },
             "alternatives": {
                 "type": "boolean",
@@ -667,6 +675,7 @@ Picking a tool:
 - goplaces_details: phone, website, hours, reviews, or photos for one place ID.
 - goplaces_photo: only with photo names from goplaces_details.
 - goplaces_directions: distance, duration, steps, or a travel-mode comparison.
+  mode defaults to drive; pass walk, bicycle, or transit explicitly.
 - goplaces_route_search: stops along a journey, ranked by detour time.
 - goplaces_route_matrix: rank several candidates by travel time at once.
 - goplaces_reverse_geocode: what is at a coordinate.
