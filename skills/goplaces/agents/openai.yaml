@@ -1,0 +1,4 @@
+interface:
+  display_name: "Google Places"
+  short_description: "Search places and plan routes"
+  default_prompt: "Find useful places or directions with Google Places and Routes."

@@ -1,0 +1,23 @@
+{
+  "name": "goplaces",
+  "version": "1.0.0",
+  "description": "Search Google Places and calculate routes through MCP.",
+  "author": { "name": "Jude Rajasekera" },
+  "license": "MIT",
+  "keywords": ["google-places", "routes", "maps", "mcp"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Google Places",
+    "shortDescription": "Search places and plan routes",
+    "longDescription": "Search businesses and landmarks, retrieve place details, calculate directions, and find stops along a route using Google Places and Routes.",
+    "developerName": "Jude Rajasekera",
+    "category": "Productivity",
+    "capabilities": ["Search", "Routes"],
+    "defaultPrompt": [
+      "Find highly rated coffee shops near Bryant Park",
+      "Give me walking directions from Grand Central to MoMA",
+      "Find EV charging stops between Seattle and Portland"
+    ]
+  }
+}

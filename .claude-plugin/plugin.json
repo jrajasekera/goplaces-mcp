@@ -1,0 +1,10 @@
+{
+  "name": "goplaces",
+  "version": "1.0.0",
+  "description": "Search Google Places and calculate routes through MCP.",
+  "author": { "name": "Jude Rajasekera" },
+  "homepage": "https://github.com/jrajasekera/goplaces-mcp",
+  "repository": "https://github.com/jrajasekera/goplaces-mcp",
+  "license": "MIT",
+  "keywords": ["google-places", "routes", "maps", "mcp"]
+}

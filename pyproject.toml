@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "goplaces-mcp"
+version = "1.0.0"
+description = "Google Places and Routes tools exposed through MCP"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Jude Rajasekera" }]
+dependencies = ["mcp>=1.12,<2"]
+
+[project.scripts]
+goplaces-mcp = "goplaces_mcp.server:main"
+
+[dependency-groups]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/goplaces_mcp"]
