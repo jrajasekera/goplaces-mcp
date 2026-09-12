@@ -1,13 +1,14 @@
-# Project Guidance
+# goplaces MCP
 
 This repository packages one Google Places and Routes implementation for both Codex and Claude Code through a shared stdio MCP server.
 
-## Start Here
+`AGENTS.md` is the canonical project guidance; keep `CLAUDE.md` as a relative symlink to it.
 
-- Check `git status` before editing and preserve unrelated work.
+## Development Setup
+
 - Read `README.md`, `pyproject.toml`, and the files relevant to the change.
-- Use `uv` for environments, dependencies, commands, and lockfile updates.
-- Keep changes uncommitted unless the user explicitly asks for a commit.
+- Requires Python 3.11+ and `uv`; use `uv` for environments, dependencies, commands, and lockfile updates.
+- Launch the stdio server with `uv run goplaces-mcp`; an MCP client normally starts it.
 
 ## Architecture
 
@@ -17,6 +18,7 @@ This repository packages one Google Places and Routes implementation for both Co
 - `skills/goplaces/SKILL.md` teaches agents when and how to select the tools. Keep it valid for both Codex and Claude Code.
 - `.mcp.json` is intentionally shared by both hosts. It uses `CLAUDE_PLUGIN_ROOT` when Claude supplies it and the plugin-root working directory otherwise.
 - `.codex-plugin/plugin.json` and `.claude-plugin/plugin.json` are host-specific metadata around the same skill and server.
+- Release versions are duplicated in both plugin manifests, `pyproject.toml`, and `src/goplaces_mcp/__init__.py`; keep them synchronized when releasing.
 
 ## Compatibility Invariants
 
@@ -56,9 +58,11 @@ uv run --with pyyaml python ~/.codex/skills/.system/skill-creator/scripts/quick_
 uv run --with pyyaml python ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py .
 ```
 
+`tests/test_server.py` covers tool listing, unknown-tool and missing-key errors, and both manifest launch modes. It removes the API key and does not exercise successful Google responses; add mocked client/handler tests when changing provider behavior.
+
 Protocol tests must initialize a real stdio `ClientSession`; direct calls to decorated `Server` registration methods do not exercise the public MCP path. Keep coverage for both launch modes:
 
 - Codex: plugin-root working directory with no `CLAUDE_PLUGIN_ROOT`.
 - Claude Code: an arbitrary working directory with `CLAUDE_PLUGIN_ROOT` set to the plugin root.
 
-Report live-API validation separately from mocked protocol and package validation.
+Report live-API validation separately from credential-free protocol, mocked handler, and package validation.
