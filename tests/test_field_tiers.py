@@ -193,3 +193,24 @@ def test_details_opt_ins_still_apply_at_a_cheap_tier(google) -> None:
     google.reply("/places/A", {"id": "A"})
     call(tools.goplaces_details, {"place_id": "A", "detail_level": "ids", "include_photos": True})
     assert google.last_request().mask_tokens() == {"id", "photos"}
+
+
+@pytest.mark.parametrize(
+    ("handler", "path"),
+    [
+        (tools.goplaces_search, "/places:searchText"),
+        (tools.goplaces_nearby, "/places:searchNearby"),
+    ],
+)
+def test_a_cheap_tier_omits_fields_it_did_not_request(google, handler, path) -> None:
+    """An empty name reads as "this place has no name"; absence reads as untold."""
+    google.reply(path, {"places": [{"id": "A"}]})
+    args = {"query": "coffee", "lat": 47.6, "lng": -122.3, "radius_m": 500, "detail_level": "ids"}
+    result = call(handler, args)
+    assert result["results"][0] == {"place_id": "A"}
+
+
+def test_details_at_a_cheap_tier_omits_fields_it_did_not_request(google) -> None:
+    google.reply("/places/A", {"id": "A"})
+    result = call(tools.goplaces_details, {"place_id": "A", "detail_level": "ids"})
+    assert result == {"place_id": "A"}

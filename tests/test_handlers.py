@@ -130,7 +130,8 @@ def test_details_opt_in_fields_change_the_field_mask(google) -> None:
     google.reply("/places/PLACE_A", {**PLACE, "regularOpeningHours": {"weekdayDescriptions": ["Mon: 7AM-5PM"]}})
     base = call(tools.goplaces_details, {"place_id": "PLACE_A"})
     assert base["hours"] == ["Mon: 7AM-5PM"]
-    assert base["reviews"] == []
+    # Reviews were never requested, so the key is absent rather than empty.
+    assert "reviews" not in base
     assert "reviews" not in google.last_request().mask_tokens()
 
     call(tools.goplaces_details, {"place_id": "PLACE_A", "include_reviews": True, "include_photos": True})
@@ -250,7 +251,6 @@ def test_null_fields_are_stripped_from_the_payload(google) -> None:
     assert json.loads(raw)["results"][0] == {
         "place_id": "X",
         "name": "X",
-        "types": [],
         # Built client-side from the place ID and name, so it costs no API call.
         "maps_url": "https://www.google.com/maps/search/?api=1&query=X&query_place_id=X",
     }

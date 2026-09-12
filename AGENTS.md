@@ -35,6 +35,9 @@ This repository packages one Google Places and Routes implementation for both Co
 - `computeRouteMatrix` returns a JSON array, not an object, and its elements arrive unordered. Use `GooglePlacesClient.request_list` and key off `originIndex`/`destinationIndex`.
 - `_as_string_list` splits a bare string on commas, which is correct for enum-ish lists such as types and connector types, and wrong for free-form addresses. Use `_as_address_list` for anything a user might write a comma inside, and use the same helper for a list and for any labels indexed against it, or label *i* stops describing item *i*.
 - A handler that issues more than one request must build every request body before the first call. Deferring the second body means a mode-specific option that is invalid for the second request fails only after the first has been paid for.
+- Localized route text lives at two levels. `routes.localizedValues` spans the whole trip; `routes.legs[].localizedValues` covers one leg. Read leg text as the trip total and a waypoint route silently reports only its first leg, so `units` appears to do nothing.
+- The Routes API carries no route-level departure or arrival time. A transit route's real schedule is on its steps, in `transitDetails.stopDetails`; only echo the requested time when the route has none of its own, and omit the field rather than emitting an empty string.
+- An unrequested field must be absent, not empty. A cheap `detail_level` that returns `name: ""` or `types: []` tells an agent the place has no name and no types, which is a different claim from "a cheaper tier did not ask". `_strip_none` drops `None`, not `""` or `[]`.
 
 ## Credentials And External Calls
 

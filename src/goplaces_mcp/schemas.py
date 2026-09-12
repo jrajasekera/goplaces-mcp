@@ -172,7 +172,11 @@ GOPLACES_SEARCH = {
         "properties": {
             "query": {"type": "string", "description": "Search text, e.g. 'coffee', 'sushi near Bryant Park', or 'EV charging'."},
             "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10, "description": "Maximum number of results."},
-            "page_token": {"type": "string", "description": "Google next_page_token from a previous goplaces_search response."},
+            "page_token": {"type": "string", "description": (
+                    "Google next_page_token from a previous goplaces_search response. "
+                    "Every other argument, detail_level included, must match the "
+                    "original request or Google rejects the page."
+                )},
             "keyword": {"type": "string", "description": "Extra keyword appended to the text query."},
             "included_type": {"type": "string", "description": "Optional Google place type filter, e.g. 'restaurant', 'cafe', 'park'."},
             "open_now": {"type": "boolean", "description": "When true, request places currently open."},
@@ -674,7 +678,8 @@ include_ev are the most expensive options; leave them off unless asked.
 
 Chaining: resolve or search first to get a place_id, then pass that place_id to
 goplaces_details or as from_place_id/to_place_id in goplaces_directions. Page
-through search results with next_page_token.
+through search results with next_page_token, repeating the other arguments
+unchanged.
 
 Attribution: when you show reviews or photos, include the author attribution the
 response carries. Google's terms require it.

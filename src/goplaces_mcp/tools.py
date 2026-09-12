@@ -102,6 +102,8 @@ _ROUTE_POLYLINE_FIELD_MASK = "routes.duration,routes.distanceMeters,routes.polyl
 _ROUTING_SUMMARY_FIELD_MASK = "routingSummaries"
 _DIRECTIONS_FIELD_MASK = (
     "routes.description,routes.warnings,routes.distanceMeters,routes.duration,"
+    # Route-level text covers every leg; legs[0] alone understates a waypoint trip.
+    "routes.localizedValues.distance,routes.localizedValues.duration,"
     "routes.legs.distanceMeters,"
     "routes.legs.duration,routes.legs.localizedValues.distance,"
     "routes.legs.localizedValues.duration,routes.legs.steps.distanceMeters,"
@@ -1173,7 +1175,7 @@ def _place_field_mask(
     return ",".join(seen)
 
 
-def _maps_search_url(place_id: str | None, name: str, location: dict[str, float] | None) -> str | None:
+def _maps_search_url(place_id: str | None, name: str | None, location: dict[str, float] | None) -> str | None:
     """Build a Google Maps link with no API call.
 
     Google's Maps URLs scheme requires ``query`` even when ``query_place_id`` is
@@ -1322,11 +1324,16 @@ def _map_search_response(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _display_name(place: dict[str, Any]) -> str:
+def _display_name(place: dict[str, Any]) -> str | None:
+    """Return None when Google sent no name, so _strip_none drops the key.
+
+    An empty string would read as "this place has no name" rather than "a
+    cheaper field tier did not ask for one".
+    """
     display = place.get("displayName")
     if isinstance(display, dict):
-        return str(display.get("text") or "")
-    return ""
+        return display.get("text") or None
+    return None
 
 
 def _map_location(location: dict[str, Any] | None) -> dict[str, float] | None:
@@ -1368,7 +1375,7 @@ def _map_place_summary(place: dict[str, Any]) -> dict[str, Any]:
         "price_level": _map_price_level(place.get("priceLevel")),
         "price_range": _map_price_range(place.get("priceRange")),
         "primary_type": _localized_name(place.get("primaryTypeDisplayName")),
-        "types": place.get("types") or [],
+        "types": place.get("types") or None,
         "open_now": _open_now(place),
         "business_status": place.get("businessStatus"),
         "utc_offset_minutes": place.get("utcOffsetMinutes"),
@@ -1466,7 +1473,7 @@ def _map_resolved_location(place: dict[str, Any]) -> dict[str, Any]:
         "name": _display_name(place),
         "address": place.get("formattedAddress"),
         "location": _map_location(place.get("location")),
-        "types": place.get("types") or [],
+        "types": place.get("types") or None,
     }
 
 
@@ -1477,9 +1484,9 @@ def _map_place_details(place: dict[str, Any]) -> dict[str, Any]:
         "phone": place.get("nationalPhoneNumber"),
         "international_phone": place.get("internationalPhoneNumber"),
         "website": place.get("websiteUri"),
-        "hours": regular_hours.get("weekdayDescriptions") or [],
-        "reviews": [_map_review(review) for review in place.get("reviews", [])],
-        "photos": [_map_photo(photo) for photo in place.get("photos", [])],
+        "hours": regular_hours.get("weekdayDescriptions") or None,
+        "reviews": [_map_review(review) for review in place.get("reviews", [])] or None,
+        "photos": [_map_photo(photo) for photo in place.get("photos", [])] or None,
     })
     return details
 
@@ -1732,7 +1739,12 @@ def _map_one_route(
     end = _waypoint_label(args, "to")
     # A multi-leg route is one journey through stops; report the whole trip.
     totals = _leg_totals(legs)
-    localized = (legs[0].get("localizedValues") or {}) if len(legs) == 1 else {}
+    # Route-level text already spans every leg. Fall back to legs[0] only when
+    # there is one leg, since its text is then the whole trip by definition.
+    localized = route.get("localizedValues") or {}
+    if not localized and len(legs) == 1:
+        localized = legs[0].get("localizedValues") or {}
+    scheduled = _transit_schedule(legs)
     response = {
         "mode": _API_TO_DIRECTION_MODE.get(api_mode, api_mode.lower()),
         "summary": route.get("description"),
@@ -1742,8 +1754,10 @@ def _map_one_route(
         "distance_meters": route.get("distanceMeters") or totals["distance_meters"],
         "duration_text": (localized.get("duration") or {}).get("text"),
         "duration_seconds": _parse_duration_seconds(route.get("duration")) or totals["duration_seconds"],
-        "departure_time": _as_str(args, "departure_time"),
-        "arrival_time": _as_str(args, "arrival_time"),
+        # A transit route knows its own schedule; anything else can only echo
+        # the time that was asked for.
+        "departure_time": scheduled["departure_time"] or _as_str(args, "departure_time") or None,
+        "arrival_time": scheduled["arrival_time"] or _as_str(args, "arrival_time") or None,
         "warnings": route.get("warnings") or [],
         "maps_url": _maps_directions_url(
             start,
@@ -1768,6 +1782,32 @@ def _map_one_route(
             _map_directions_step(step) for leg in legs for step in leg.get("steps", [])
         ]
     return response
+
+
+def _transit_schedule(legs: list[Any]) -> dict[str, str | None]:
+    """Pull a transit route's real departure and arrival times off its steps.
+
+    The Routes API carries no route-level times, so the first boarding and the
+    last alighting are the closest thing the journey has to a schedule. Walking
+    steps have no times at all, which is why a mode with none reports neither.
+    """
+    times: list[tuple[str | None, str | None]] = []
+    for leg in legs:
+        if not isinstance(leg, dict):
+            continue
+        for step in leg.get("steps") or []:
+            if not isinstance(step, dict):
+                continue
+            details = step.get("transitDetails")
+            if not isinstance(details, dict):
+                continue
+            stops = details.get("stopDetails")
+            if not isinstance(stops, dict):
+                continue
+            times.append((stops.get("departureTime"), stops.get("arrivalTime")))
+    if not times:
+        return {"departure_time": None, "arrival_time": None}
+    return {"departure_time": times[0][0], "arrival_time": times[-1][1]}
 
 
 def _leg_totals(legs: list[Any]) -> dict[str, int | None]:
