@@ -4,7 +4,7 @@
       "command": "/bin/sh",
       "args": [
         "-c",
-        "exec uv run --directory \"${CLAUDE_PLUGIN_ROOT:-.}\" goplaces-mcp"
+        "exec uv run --frozen --directory \"${CLAUDE_PLUGIN_ROOT:-.}\" goplaces-mcp"
       ],
       "cwd": "."
     }

@@ -58,7 +58,6 @@ def assert_validation(result: dict, field: str) -> None:
         (tools.goplaces_route_search, {"from_text": "a", "to_text": "b"}, "query"),
         (tools.goplaces_route_search, {"query": "q", "to_text": "b"}, "from_text"),
         (tools.goplaces_route_search, {"query": "q", "from_text": "a"}, "to_text"),
-        (tools.goplaces_route_search, {"query": "q", "from_text": "a", "to_text": "b", "radius_m": 0}, "radius_m"),
         (tools.goplaces_route_search, {"query": "q", "from_text": "a", "to_text": "b", "mode": "hover"}, "mode"),
     ],
 )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 
 from goplaces_mcp import tools
@@ -250,4 +251,35 @@ def test_null_fields_are_stripped_from_the_payload(google) -> None:
         "place_id": "X",
         "name": "X",
         "types": [],
+        # Built client-side from the place ID and name, so it costs no API call.
+        "maps_url": "https://www.google.com/maps/search/?api=1&query=X&query_place_id=X",
     }
+
+
+def test_photo_can_return_image_bytes(google) -> None:
+    google.reply("/media", {"name": "places/A/photos/B/media", "photoUri": f"{google.base_url}/cdn/pic.jpg"})
+    google.reply("/cdn/pic.jpg", b"\xff\xd8\xff\xdb-not-a-real-jpeg")
+    result = call(
+        tools.goplaces_photo,
+        {"name": "places/A/photos/B", "max_width_px": 400, "include_image": True},
+    )
+    assert result["image_mime_type"] == "image/jpeg"
+    assert base64.b64decode(result["image_base64"]) == b"\xff\xd8\xff\xdb-not-a-real-jpeg"
+
+
+def test_photo_omits_image_bytes_by_default(google) -> None:
+    google.reply("/media", {"name": "places/A/photos/B/media", "photoUri": f"{google.base_url}/cdn/pic.jpg"})
+    result = call(tools.goplaces_photo, {"name": "places/A/photos/B", "max_width_px": 400})
+    assert "image_base64" not in result
+    assert google.requests_to("/cdn/pic.jpg") == []
+
+
+def test_oversized_photo_is_refused(google, monkeypatch) -> None:
+    monkeypatch.setattr(tools, "_MAX_PHOTO_BYTES", 8)
+    google.reply("/media", {"name": "n", "photoUri": f"{google.base_url}/cdn/big.jpg"})
+    google.reply("/cdn/big.jpg", b"x" * 64)
+    error = call(
+        tools.goplaces_photo,
+        {"name": "places/A/photos/B", "max_width_px": 400, "include_image": True},
+    )["error"]
+    assert "exceeds" in error["message"]
