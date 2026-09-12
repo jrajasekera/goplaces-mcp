@@ -800,6 +800,10 @@ def goplaces_directions(args: dict[str, Any], **_: Any) -> str:
             raise ValidationError("route_modifiers", "avoid tolls/highways/ferries require drive mode")
 
         request_body = _directions_body(args, primary_mode)
+        # Build the compare body up front too: it validates mode-specific options
+        # against the second mode, and doing that after the first request would
+        # discard a result the user already paid for.
+        compare_body = _directions_body(args, compare_mode) if compare_mode else None
         payload = client.request(
             "POST",
             client.directions_url("/directions/v2:computeRoutes"),
@@ -810,7 +814,6 @@ def goplaces_directions(args: dict[str, Any], **_: Any) -> str:
         if not compare_mode:
             return _json_result(primary)
 
-        compare_body = _directions_body(args, compare_mode)
         compare_payload = client.request(
             "POST",
             client.directions_url("/directions/v2:computeRoutes"),
@@ -983,8 +986,8 @@ def goplaces_route_matrix(args: dict[str, Any], **_: Any) -> str:
             body,
             _ROUTE_MATRIX_FIELD_MASK,
         )
-        origin_labels = _as_string_list(args, "origins")
-        destination_labels = _as_string_list(args, "destinations")
+        origin_labels = _as_address_list(args, "origins")
+        destination_labels = _as_address_list(args, "destinations")
         results = []
         for element in elements:
             if not isinstance(element, dict):
@@ -1064,7 +1067,12 @@ def goplaces_reverse_geocode(args: dict[str, Any], **_: Any) -> str:
         included = _as_string_list(args, "included_types")
         if included:
             body["includedTypes"] = included
-        field_mask = _place_field_mask(_detail_level(args), prefix="places.")
+        field_mask = _place_field_mask(
+            _detail_level(args),
+            prefix="places.",
+            atmosphere=_as_bool(args, "include_atmosphere"),
+            ev=_as_bool(args, "include_ev"),
+        )
         payload = client.request("POST", client.places_url("/places:searchNearby"), body, field_mask)
         origin = {"lat": lat, "lng": lng}
         results = []

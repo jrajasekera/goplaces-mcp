@@ -318,3 +318,90 @@ def test_comma_in_an_intermediate_waypoint_is_preserved(google) -> None:
     google.reply("/directions/v2:computeRoutes", {"routes": [{"legs": [{"duration": "60s"}]}]})
     call(tools.goplaces_directions, {"from_text": "A", "to_text": "C", "waypoints": ["9 Pike St, Seattle"]})
     assert google.last_request().body["intermediates"] == [{"address": "9 Pike St, Seattle"}]
+
+
+def test_matrix_labels_stay_aligned_with_waypoints(google) -> None:
+    """Labels and waypoints must be split identically or index i mislabels."""
+    google.reply(
+        MATRIX_PATH,
+        [{"originIndex": 0, "destinationIndex": 0, "condition": "ROUTE_EXISTS", "duration": "60s"}],
+    )
+    result = call(tools.goplaces_route_matrix, {"origins": "1 Main St, Seattle", "destinations": ["B"]})
+    body = google.last_request().body
+    assert body["origins"] == [{"waypoint": {"address": "1 Main St, Seattle"}}]
+    # The label must describe the waypoint it is indexed against, not half of it.
+    assert result["results"][0]["origin"] == "1 Main St, Seattle"
+
+    google.reset()
+    google.reply(
+        MATRIX_PATH,
+        [{"originIndex": 1, "destinationIndex": 0, "condition": "ROUTE_EXISTS", "duration": "60s"}],
+    )
+    result = call(
+        tools.goplaces_route_matrix,
+        {"origins": ["1 Main St, Seattle", "9 Pike St, Seattle"], "destinations": ["B"]},
+    )
+    assert result["results"][0]["origin"] == "9 Pike St, Seattle"
+
+
+def test_reverse_geocode_honours_the_opt_in_flags(google) -> None:
+    """The schema advertises these, so accepting and ignoring them is a silent lie."""
+    google.reply("/places:searchNearby", {"places": []})
+    call(
+        tools.goplaces_reverse_geocode,
+        {"lat": 47.6, "lng": -122.3, "include_atmosphere": True, "include_ev": True},
+    )
+    mask = google.last_request().mask_tokens()
+    assert "places.editorialSummary" in mask
+    assert "places.evChargeOptions" in mask
+
+
+def test_reverse_geocode_stays_cheap_by_default(google) -> None:
+    google.reply("/places:searchNearby", {"places": []})
+    call(tools.goplaces_reverse_geocode, {"lat": 47.6, "lng": -122.3})
+    mask = google.last_request().mask_tokens()
+    assert "places.editorialSummary" not in mask
+    assert "places.evChargeOptions" not in mask
+
+
+def test_compare_mode_validates_both_legs_before_spending(google) -> None:
+    """routing_preference is valid for drive but not walk; catch it before paying."""
+    google.reply("/directions/v2:computeRoutes", {"routes": [{"legs": [{"duration": "60s"}]}]})
+    error = call(
+        tools.goplaces_directions,
+        {
+            "from_text": "A",
+            "to_text": "B",
+            "mode": "drive",
+            "compare_mode": "walk",
+            "routing_preference": "traffic_aware",
+        },
+    )["error"]
+    assert error["field"] == "routing_preference"
+    assert google.requests == [], "must not pay for the primary leg then discard it"
+
+
+def test_compare_mode_validates_transit_options_before_spending(google) -> None:
+    google.reply("/directions/v2:computeRoutes", {"routes": [{"legs": [{"duration": "60s"}]}]})
+    error = call(
+        tools.goplaces_directions,
+        {
+            "from_text": "A",
+            "to_text": "B",
+            "mode": "transit",
+            "compare_mode": "drive",
+            "transit_modes": ["TRAIN"],
+        },
+    )["error"]
+    assert error["field"] == "transit_modes"
+    assert google.requests == []
+
+
+def test_valid_compare_mode_still_issues_both_requests(google) -> None:
+    google.reply("/directions/v2:computeRoutes", {"routes": [{"legs": [{"duration": "60s"}]}]})
+    result = call(
+        tools.goplaces_directions,
+        {"from_text": "A", "to_text": "B", "mode": "drive", "compare_mode": "walk"},
+    )
+    assert [route["mode"] for route in result["routes"]] == ["driving", "walking"]
+    assert len(google.requests_to("/directions/v2:computeRoutes")) == 2
