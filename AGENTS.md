@@ -16,29 +16,32 @@ This repository packages one Google Places and Routes implementation for both Co
 - `src/goplaces_mcp/schemas.py` is the authoritative definition of the ten public tool names, titles, descriptions, input schemas, output schemas, and the `SERVER_INSTRUCTIONS` string sent at initialize.
 - `src/goplaces_mcp/server.py` is a thin MCP adapter. Keep provider and domain logic out of this file. It sets `isError` on payloads carrying an `error` key, attaches read-only tool annotations, returns `structuredContent`, and lifts photo bytes into an image block.
 - `skills/goplaces/SKILL.md` teaches agents when and how to select the tools. Keep it valid for both Codex and Claude Code.
-- `.mcp.json` is intentionally shared by both hosts. It uses `CLAUDE_PLUGIN_ROOT` when Claude supplies it and the plugin-root working directory otherwise.
+- `.mcp.json` is intentionally shared by both hosts. It uses `CLAUDE_PLUGIN_ROOT` when Claude supplies it and the plugin-root working directory otherwise. The `/bin/sh` wrapper is what expands that variable, which is why one manifest can serve both hosts and why the launcher is POSIX-only. `uv run --frozen` keeps startup from resolving or re-locking dependencies.
 - `.codex-plugin/plugin.json` and `.claude-plugin/plugin.json` are host-specific metadata around the same skill and server.
-- Release versions are duplicated in both plugin manifests, `pyproject.toml`, and `src/goplaces_mcp/__init__.py`; keep them synchronized when releasing.
+- Release versions are duplicated in both plugin manifests, `pyproject.toml`, and `src/goplaces_mcp/__init__.py`; keep them synchronized when releasing. `tests/test_packaging.py` fails if they drift.
 
 ## Compatibility Invariants
 
 - Preserve the existing `goplaces_*` tool names unless a breaking release is explicitly requested.
 - Keep `.mcp.json` at the repository root. Codex plugin validation requires that filename, while Claude Code discovers it there automatically.
 - Do not replace `${CLAUDE_PLUGIN_ROOT:-.}` with a host-specific absolute path.
-- Treat stdout as MCP protocol output. Send diagnostics to stderr or logging, never ordinary `print()` calls.
+- Treat stdout as MCP protocol output. Send diagnostics through the module `_logger` in `tools.py`, which only attaches a stderr handler when `GOPLACES_DEBUG` is set. Never use ordinary `print()` calls.
 - Tool handlers are synchronous network clients; dispatch them off the async event loop as the server currently does.
-- Keep schemas and handlers in one-to-one correspondence. Adding or removing a tool requires updating the schema registry, handler registry, skill, README, and protocol tests.
+- Keep schemas and handlers in one-to-one correspondence. Adding or removing a tool requires updating the schema registry, handler registry, skill, README, and protocol tests. Every tool also needs a `title` and an `output_schema`, plus an entry in the `cases` table in `tests/test_protocol_results.py`; both are asserted exhaustively, so a new tool fails the suite until it is listed.
 - Return machine-readable JSON errors to the agent instead of leaking handler exceptions through the MCP transport.
 - Validate every argument before issuing the first billable Google request. A handler that fails validation after a network call has already cost the user money.
 - Field-mask tokens are `places.`-prefixed on the search endpoints and unprefixed on Place Details. `nextPageToken` and `routingSummaries` hang off the response root and must never take the `places.` prefix; `_place_field_mask` prefixes everything passed to it, so append root tokens at the call site.
 - Google bills each Places request at the most expensive field tier the mask names. Keep `_place_field_mask` the single place tiers are decided, and leave the most expensive fields behind `include_atmosphere` and `include_ev`.
 - `computeRouteMatrix` returns a JSON array, not an object, and its elements arrive unordered. Use `GooglePlacesClient.request_list` and key off `originIndex`/`destinationIndex`.
+- `_as_string_list` splits a bare string on commas, which is correct for enum-ish lists such as types and connector types, and wrong for free-form addresses. Use `_as_address_list` for anything a user might write a comma inside, and use the same helper for a list and for any labels indexed against it, or label *i* stops describing item *i*.
+- A handler that issues more than one request must build every request body before the first call. Deferring the second body means a mode-specific option that is invalid for the second request fails only after the first has been paid for.
 
 ## Credentials And External Calls
 
 - Never commit API keys, credentials, `.env` files, or captured request headers.
 - `GOOGLE_PLACES_API_KEY` is required at runtime. Directions and route-search operations also require the Routes API on the same Google Cloud project.
 - The optional base-URL variables exist to support controlled testing; do not silently redirect production requests.
+- `GOOGLE_PLACES_TIMEOUT_SECONDS`, `GOOGLE_PLACES_MAX_ATTEMPTS`, and `GOOGLE_PLACES_RETRY_BASE_DELAY_SECONDS` tune the client. `429` and `503` are retried with exponential backoff; every other status fails immediately.
 - Tests should mock Google responses and must not require credentials or make billable API calls.
 - Do not perform a live Google request unless the user explicitly authorizes it and understands that it may incur API usage.
 
