@@ -336,6 +336,23 @@ def _as_string_list(args: dict[str, Any], key: str) -> list[str]:
     raise ValidationError(key, "must be a string or list of strings")
 
 
+def _as_address_list(args: dict[str, Any], key: str) -> list[str]:
+    """Read a list of addresses without comma-splitting.
+
+    ``_as_string_list`` splits a bare string on commas, which is right for type
+    names but would turn "1 Main St, Seattle" into two separate waypoints.
+    """
+    value = args.get(key)
+    if value is None or value == "":
+        return []
+    if isinstance(value, str):
+        stripped = value.strip()
+        return [stripped] if stripped else []
+    if isinstance(value, Iterable):
+        return [str(part).strip() for part in value if str(part).strip()]
+    raise ValidationError(key, "must be a string or list of strings")
+
+
 def _limit(args: dict[str, Any], *, key: str = "limit", default: int = 10, maximum: int = _MAX_RESULTS) -> int:
     limit = _as_int(args, key, default)
     if limit < 1 or limit > maximum:
@@ -997,7 +1014,7 @@ def goplaces_route_matrix(args: dict[str, Any], **_: Any) -> str:
 
 def _matrix_waypoints(args: dict[str, Any], key: str) -> list[dict[str, Any]]:
     """Read a list of addresses or place IDs into Routes waypoints."""
-    values = _as_string_list(args, key)
+    values = _as_address_list(args, key)
     if not values:
         raise ValidationError(key, "at least one address or place ID is required")
     if len(values) > _MAX_MATRIX_WAYPOINTS:
@@ -1606,7 +1623,7 @@ def _directions_body(args: dict[str, Any], api_mode: str) -> dict[str, Any]:
 
 def _intermediate_waypoints(args: dict[str, Any]) -> list[dict[str, Any]]:
     """Map free-form stop text into Routes intermediate waypoints."""
-    stops = _as_string_list(args, "waypoints")
+    stops = _as_address_list(args, "waypoints")
     if not stops:
         return []
     if len(stops) > _MAX_INTERMEDIATES:

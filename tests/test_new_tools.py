@@ -305,3 +305,16 @@ def test_directions_include_a_maps_link(google) -> None:
         "https://www.google.com/maps/dir/?api=1&origin=Space+Needle"
         "&destination=Pike+Place&travelmode=bicycling"
     )
+
+
+def test_an_address_with_a_comma_stays_one_waypoint(google) -> None:
+    """Comma-splitting would turn one address into two bogus waypoints."""
+    google.reply(MATRIX_PATH, [])
+    call(tools.goplaces_route_matrix, {"origins": "1 Main St, Seattle", "destinations": ["B"]})
+    assert google.last_request().body["origins"] == [{"waypoint": {"address": "1 Main St, Seattle"}}]
+
+
+def test_comma_in_an_intermediate_waypoint_is_preserved(google) -> None:
+    google.reply("/directions/v2:computeRoutes", {"routes": [{"legs": [{"duration": "60s"}]}]})
+    call(tools.goplaces_directions, {"from_text": "A", "to_text": "C", "waypoints": ["9 Pike St, Seattle"]})
+    assert google.last_request().body["intermediates"] == [{"address": "9 Pike St, Seattle"}]
