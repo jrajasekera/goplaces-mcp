@@ -1,4 +1,4 @@
-"""Tool schemas exposed to the Hermes model for the goplaces plugin."""
+"""Tool schemas exposed to MCP hosts for the goplaces plugin."""
 
 from __future__ import annotations
 

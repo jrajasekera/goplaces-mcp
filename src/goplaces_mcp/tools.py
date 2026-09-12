@@ -1,4 +1,4 @@
-"""Tool handlers for the Hermes goplaces plugin.
+"""Tool handlers for the goplaces MCP plugin.
 
 This is a dependency-free Python port of the useful goplaces CLI workflows:
 text search, nearby search, autocomplete, details, photo media, location
@@ -8,10 +8,13 @@ resolution, directions, and search-along-route.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import re
+import sys
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -24,6 +27,11 @@ _MAX_CIRCLE_RADIUS_M = 50_000.0
 _MAX_RESULTS = 20
 _MAX_RESOLVE_RESULTS = 10
 _MAX_ROUTE_WAYPOINTS = 20
+# Google returns these when it is throttling or briefly unavailable; both are
+# worth one bounded retry. Every other status is a real failure.
+_RETRY_STATUSES = frozenset({429, 503})
+_DEFAULT_MAX_ATTEMPTS = 3
+_DEFAULT_RETRY_BASE_DELAY_SECONDS = 0.5
 
 _SEARCH_FIELD_MASK = (
     "places.id,places.displayName,places.formattedAddress,places.location,"
@@ -96,6 +104,33 @@ _API_TO_DIRECTION_MODE = {
 _client_lock = threading.Lock()
 _client: "GooglePlacesClient | None" = None
 
+_logger = logging.getLogger("goplaces_mcp")
+_logging_lock = threading.Lock()
+_logging_configured = False
+
+
+def _configure_logging() -> None:
+    """Attach a stderr handler once, and only when debugging is requested.
+
+    stdout carries the MCP protocol, so diagnostics must never go there.
+    """
+    global _logging_configured
+    with _logging_lock:
+        if _logging_configured:
+            return
+        _logging_configured = True
+        if not _as_env_bool("GOPLACES_DEBUG"):
+            _logger.addHandler(logging.NullHandler())
+            return
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(logging.Formatter("goplaces %(levelname)s %(message)s"))
+        _logger.addHandler(handler)
+        _logger.setLevel(logging.DEBUG)
+
+
+def _as_env_bool(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
 
 class ValidationError(ValueError):
     """User-fixable input validation error."""
@@ -136,6 +171,8 @@ def _get_client() -> "GooglePlacesClient":
             routes_base_url=routes_base_url,
             directions_base_url=directions_base_url,
             timeout=timeout,
+            max_attempts=int(_env_float("GOOGLE_PLACES_MAX_ATTEMPTS", _DEFAULT_MAX_ATTEMPTS)),
+            retry_base_delay=_env_float("GOOGLE_PLACES_RETRY_BASE_DELAY_SECONDS", _DEFAULT_RETRY_BASE_DELAY_SECONDS),
         )
         if _client is None or _client.config_key != candidate.config_key:
             _client = candidate
@@ -273,7 +310,16 @@ def _normalize_url_base(value: str) -> str:
 class GooglePlacesClient:
     """Tiny stdlib Google Places/Routes API client."""
 
-    def __init__(self, api_key: str, places_base_url: str, routes_base_url: str, directions_base_url: str, timeout: float) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        places_base_url: str,
+        routes_base_url: str,
+        directions_base_url: str,
+        timeout: float,
+        max_attempts: int = _DEFAULT_MAX_ATTEMPTS,
+        retry_base_delay: float = _DEFAULT_RETRY_BASE_DELAY_SECONDS,
+    ) -> None:
         if not api_key:
             raise ValidationError("GOOGLE_PLACES_API_KEY", "environment variable is required")
         self.api_key = api_key
@@ -281,9 +327,44 @@ class GooglePlacesClient:
         self.routes_base_url = _normalize_url_base(routes_base_url)
         self.directions_base_url = _normalize_url_base(directions_base_url)
         self.timeout = timeout
-        self.config_key = (api_key, self.places_base_url, self.routes_base_url, self.directions_base_url, timeout)
+        self.max_attempts = max(1, max_attempts)
+        self.retry_base_delay = max(0.0, retry_base_delay)
+        self.config_key = (
+            api_key,
+            self.places_base_url,
+            self.routes_base_url,
+            self.directions_base_url,
+            timeout,
+            self.max_attempts,
+            self.retry_base_delay,
+        )
 
     def request(self, method: str, url: str, body: dict[str, Any] | None = None, field_mask: str = "") -> dict[str, Any]:
+        """Send one Google request, retrying throttled and unavailable responses."""
+        _configure_logging()
+        last_error: GoogleAPIError | None = None
+        for attempt in range(1, self.max_attempts + 1):
+            try:
+                raw = self._attempt(method, url, body, field_mask, attempt)
+            except GoogleAPIError as exc:
+                if exc.status not in _RETRY_STATUSES or attempt == self.max_attempts:
+                    raise
+                last_error = exc
+                delay = self.retry_base_delay * (2 ** (attempt - 1))
+                _logger.debug("retrying %s after status %s in %.2fs", url, exc.status, delay)
+                if delay:
+                    time.sleep(delay)
+                continue
+            if not raw.strip():
+                return {}
+            payload = _loads_json(raw)
+            if not isinstance(payload, dict):
+                raise GoogleAPIError(None, "unexpected non-object JSON response", payload)
+            return payload
+        # Unreachable: the loop either returns or re-raises on the final attempt.
+        raise last_error or GoogleAPIError(None, "request failed")
+
+    def _attempt(self, method: str, url: str, body: dict[str, Any] | None, field_mask: str, attempt: int) -> str:
         data = None if body is None else json.dumps(body).encode("utf-8")
         headers = {
             "X-Goog-Api-Key": self.api_key,
@@ -294,22 +375,19 @@ class GooglePlacesClient:
         if field_mask:
             headers["X-Goog-FieldMask"] = field_mask
         request = urllib.request.Request(url, data=data, method=method.upper(), headers=headers)
+        _logger.debug("request attempt %d %s %s mask=%s", attempt, method.upper(), url, field_mask or "-")
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                raw = response.read().decode("utf-8", errors="replace")
+                return response.read().decode("utf-8", errors="replace")
         except urllib.error.HTTPError as exc:
             raw = exc.read().decode("utf-8", errors="replace")
-            payload = _loads_json(raw)
-            message = _extract_google_error_message(payload) or raw or exc.reason
+            payload = _loads_json_lenient(raw)
+            message = _extract_google_error_message(payload) or raw or str(exc.reason)
+            _logger.debug("error response %s %s: %s", exc.code, url, message)
             raise GoogleAPIError(exc.code, message, payload) from exc
         except urllib.error.URLError as exc:
+            _logger.debug("transport failure %s: %s", url, exc.reason)
             raise GoogleAPIError(None, str(exc.reason)) from exc
-        if not raw.strip():
-            return {}
-        payload = _loads_json(raw)
-        if not isinstance(payload, dict):
-            raise GoogleAPIError(None, "unexpected non-object JSON response", payload)
-        return payload
 
     def places_url(self, path: str, query: dict[str, str] | None = None) -> str:
         return _build_url(self.places_base_url, path, query)
@@ -329,6 +407,14 @@ def _build_url(base: str, path: str, query: dict[str, str] | None) -> str:
     if clean_query:
         url += "?" + urllib.parse.urlencode(clean_query)
     return url
+
+
+def _loads_json_lenient(raw: str) -> Any:
+    """Decode an error body, tolerating the non-JSON pages Google proxies emit."""
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return None
 
 
 def _loads_json(raw: str) -> Any:
@@ -377,7 +463,7 @@ def goplaces_search(args: dict[str, Any], **_: Any) -> str:
             body["priceLevels"] = price_levels
         payload = client.request("POST", client.places_url("/places:searchText"), body, _SEARCH_FIELD_MASK)
         return _json_result(_map_search_response(payload))
-    except Exception as exc:  # noqa: BLE001 - tools must not raise into Hermes
+    except Exception as exc:  # noqa: BLE001 - handlers return errors, never raise
         return _json_error(exc)
 
 
